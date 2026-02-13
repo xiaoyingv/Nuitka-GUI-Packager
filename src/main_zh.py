@@ -6,15 +6,14 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QTextEdit, QPushButton, QCheckBox, QFileDialog, QMessageBox,
-    QGroupBox, QFrame, QProgressBar, QSizePolicy, QTabWidget, QComboBox,
-    QSpinBox, QListWidget, QListWidgetItem, QAbstractItemView, QSplitter, QToolButton
+    QGroupBox, QProgressBar, QTabWidget, QComboBox, QHeaderView,
+    QListWidget, QListWidgetItem, QAbstractItemView, QTableWidget, QTableWidgetItem
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSettings
-from PySide6.QtGui import QFont, QIcon, QTextCursor, QPalette, QColor
+from PySide6.QtGui import QFont, QIcon, QTextCursor
 
 # 设置日志格式
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
-
 
 class PackageThread(QThread):
     """执行打包命令的线程"""
@@ -185,6 +184,32 @@ class NuitkaPackager(QMainWindow):
         self.output_btn = QPushButton("浏览...")
         self.output_btn.clicked.connect(self.select_output_dir)
 
+        # --- 数据文件/目录配置区域 ---
+        data_group = QGroupBox("附加资源配置")
+        data_layout = QVBoxLayout(data_group)
+
+        # 使用表格展示：[类型, 源路径, 目标路径, 操作]
+        self.data_table = QTableWidget(0, 3)
+        self.data_table.setHorizontalHeaderLabels(["类型", "源路径", "目标相对路径"])
+        self.data_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        data_layout.addWidget(self.data_table)
+
+        # 按钮操作栏
+        btn_layout = QHBoxLayout()
+        self.add_dir_btn = QPushButton("添加目录")
+        self.add_file_btn = QPushButton("添加文件")
+        self.del_row_btn = QPushButton("删除选中项")
+
+        btn_layout.addWidget(self.add_dir_btn)
+        btn_layout.addWidget(self.add_file_btn)
+        btn_layout.addStretch() # 弹簧
+        btn_layout.addWidget(self.del_row_btn)
+        data_layout.addLayout(btn_layout)
+
+        self.add_dir_btn.clicked.connect(lambda: self.add_resource("dir"))
+        self.add_file_btn.clicked.connect(lambda: self.add_resource("file"))
+        self.del_row_btn.clicked.connect(self.remove_resource)
+
         # 添加配置项到布局
         config_layout.addWidget(self.python_label, 0, 0)
         config_layout.addWidget(self.python_input, 0, 1)
@@ -203,6 +228,7 @@ class NuitkaPackager(QMainWindow):
         config_layout.addWidget(self.output_btn, 3, 2)
 
         file_config_layout.addWidget(config_group)
+        file_config_layout.addWidget(data_group)
         file_config_layout.addStretch()
 
         # 将文件配置标签页添加到主选项卡
@@ -461,22 +487,6 @@ class NuitkaPackager(QMainWindow):
         self.include_module_input.setMinimumHeight(20)  # 设置最小高度
         self.include_module_input.textChanged.connect(self.update_command)
 
-        # 包含数据文件
-        self.include_data_label = QLabel("包含数据文件:")
-        self.include_data_input = QLineEdit()
-        self.include_data_input.setPlaceholderText("源路径=目标路径 (e.g., data/*.json=./data/)")
-        self.include_data_input.setMinimumWidth(300)  # 防止压缩
-        self.include_data_input.setMinimumHeight(20)  # 设置最小高度
-        self.include_data_input.textChanged.connect(self.update_command)
-
-        # 包含数据目录
-        self.include_data_dir_label = QLabel("包含数据目录:")
-        self.include_data_dir_input = QLineEdit()
-        self.include_data_dir_input.setPlaceholderText("源目录=目标目录 (e.g., ./assets=assets/)")
-        self.include_data_dir_input.setMinimumWidth(300)  # 防止压缩
-        self.include_data_dir_input.setMinimumHeight(20)  # 设置最小高度
-        self.include_data_dir_input.textChanged.connect(self.update_command)
-
         # 排除数据文件
         self.noinclude_data_label = QLabel("排除数据文件:")
         self.noinclude_data_input = QLineEdit()
@@ -511,92 +521,20 @@ class NuitkaPackager(QMainWindow):
         include_layout.addWidget(self.include_module_label, 2, 0)
         include_layout.addWidget(self.include_module_input, 2, 1)
 
-        include_layout.addWidget(self.include_data_label, 3, 0)
-        include_layout.addWidget(self.include_data_input, 3, 1)
+        include_layout.addWidget(self.noinclude_data_label, 3, 0)
+        include_layout.addWidget(self.noinclude_data_input, 3, 1)
 
-        include_layout.addWidget(self.include_data_dir_label, 4, 0)
-        include_layout.addWidget(self.include_data_dir_input, 4, 1)
+        include_layout.addWidget(self.include_onefile_ext_label, 4, 0)
+        include_layout.addWidget(self.include_onefile_ext_input, 4, 1)
 
-        include_layout.addWidget(self.noinclude_data_label, 5, 0)
-        include_layout.addWidget(self.noinclude_data_input, 5, 1)
-
-        include_layout.addWidget(self.include_onefile_ext_label, 6, 0)
-        include_layout.addWidget(self.include_onefile_ext_input, 6, 1)
-
-        include_layout.addWidget(self.include_raw_dir_label, 7, 0)
-        include_layout.addWidget(self.include_raw_dir_input, 7, 1)
+        include_layout.addWidget(self.include_raw_dir_label, 5, 0)
+        include_layout.addWidget(self.include_raw_dir_input, 5, 1)
 
         advanced_layout.addWidget(include_group)
         advanced_layout.addStretch()
 
         # 将高级选项标签页添加到主选项卡
         main_tab.addTab(advanced_tab, "高级选项")
-
-        # ===== 单文件选项标签页 =====
-        onefile_tab = QWidget()
-        onefile_layout = QVBoxLayout(onefile_tab)
-        onefile_layout.setContentsMargins(10, 10, 10, 10)
-        onefile_layout.setSpacing(15)
-
-        # 单文件选项组
-        onefile_group = QGroupBox("单文件模式选项")
-        onefile_group_layout = QGridLayout(onefile_group)
-        onefile_group_layout.setSpacing(10)
-
-        # 单文件选项
-        self.onefile_tempdir_label = QLabel("解压目录:")
-        self.onefile_tempdir_input = QLineEdit()
-        self.onefile_tempdir_input.setPlaceholderText("{TEMP}/onefile_{PID}_{TIME} (默认)")
-        self.onefile_tempdir_input.textChanged.connect(self.update_command)
-
-        self.onefile_grace_time_label = QLabel("子进程终止时间(ms):")
-        self.onefile_grace_time_spin = QSpinBox()
-        self.onefile_grace_time_spin.setRange(1000, 30000)
-        self.onefile_grace_time_spin.setValue(5000)
-        self.onefile_grace_time_spin.setSingleStep(1000)  # Step by 1000ms
-        self.onefile_grace_time_spin.setSuffix(" ms")  # Add suffix for clarity
-        self.onefile_grace_time_spin.setMinimumWidth(120)  # Ensure minimum width
-        self.onefile_grace_time_spin.valueChanged.connect(self.update_command)
-
-        self.onefile_no_compression_check = QCheckBox("--onefile-no-compression (禁用压缩)")
-        self.onefile_no_compression_check.setChecked(False)
-        self.onefile_no_compression_check.stateChanged.connect(self.update_command)
-
-        self.onefile_as_archive_check = QCheckBox("--onefile-as-archive (创建可解压的归档)")
-        self.onefile_as_archive_check.setChecked(False)
-        self.onefile_as_archive_check.stateChanged.connect(self.update_command)
-
-        # 添加单文件选项到布局
-        onefile_group_layout.addWidget(self.onefile_tempdir_label, 0, 0)
-        onefile_group_layout.addWidget(self.onefile_tempdir_input, 0, 1)
-
-        onefile_group_layout.addWidget(self.onefile_grace_time_label, 1, 0)
-        onefile_group_layout.addWidget(self.onefile_grace_time_spin, 1, 1)
-
-        onefile_group_layout.addWidget(self.onefile_no_compression_check, 2, 0)
-        onefile_group_layout.addWidget(self.onefile_as_archive_check, 2, 1)
-
-        onefile_layout.addWidget(onefile_group)
-
-        # DLL选项组
-        dll_group = QGroupBox("DLL控制")
-        dll_layout = QGridLayout(dll_group)
-
-        # DLL选项
-        self.noinclude_dlls_label = QLabel("排除DLL:")
-        self.noinclude_dlls_input = QLineEdit()
-        self.noinclude_dlls_input.setPlaceholderText("DLL文件名模式 (e.g., someDLL.*)")
-        self.noinclude_dlls_input.textChanged.connect(self.update_command)
-
-        # 添加DLL选项到布局
-        dll_layout.addWidget(self.noinclude_dlls_label, 0, 0)
-        dll_layout.addWidget(self.noinclude_dlls_input, 0, 1)
-
-        onefile_layout.addWidget(dll_group)
-        onefile_layout.addStretch()
-
-        # 将单文件选项标签页添加到主选项卡
-        main_tab.addTab(onefile_tab, "单文件选项")
 
         # ===== 元数据标签页 =====
         metadata_tab = QWidget()
@@ -1027,6 +965,40 @@ class NuitkaPackager(QMainWindow):
             QCheckBox {
                 color: #ffffff;
             }
+            /* 表格整体样式 */
+            QTableWidget {
+                background-color: #1e1e1e;
+                border: 1px solid #555;
+                gridline-color: #444;
+                color: #ffffff;
+                border-radius: 4px;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            /* 表头样式 */
+            QHeaderView::section {
+                background-color: #2c2c2e;
+                color: #ffffff;
+                padding: 5px;
+                border: 1px solid #555;
+                font-weight: bold;
+            }
+            /* 表格左上角空白区域 */
+            QTableCornerButton::section {
+                background-color: #2c2c2e;
+                border: 1px solid #555;
+            }
+            /* 滚动条美化（可选，增加一致性） */
+            QScrollBar:vertical {
+                border: none;
+                background: #2c2c2e;
+                width: 10px;
+            }
+            QScrollBar::handle:vertical {
+                background: #555;
+                min-height: 20px;
+                border-radius: 5px;
+            }
             QSpinBox {
                 background-color: #1e1e1e;
                 border: 1px solid #555;
@@ -1199,6 +1171,29 @@ class NuitkaPackager(QMainWindow):
             }
             QCheckBox {
                 color: #2c3e50;
+            }
+            /* 表格整体样式 */
+            QTableWidget {
+                background-color: white;
+                border: 1px solid #dcdde1;
+                gridline-color: #f0f0f0;
+                color: #2c3e50;
+                border-radius: 4px;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            /* 表头样式 */
+            QHeaderView::section {
+                background-color: #ecf0f1;
+                color: #2c3e50;
+                padding: 5px;
+                border: 1px solid #dcdde1;
+                font-weight: bold;
+            }
+            /* 表格左上角空白区域 */
+            QTableCornerButton::section {
+                background-color: #ecf0f1;
+                border: 1px solid #dcdde1;
             }
             QSpinBox {
                 background-color: white;
@@ -1439,6 +1434,34 @@ class NuitkaPackager(QMainWindow):
         if dir_path:
             self.output_dir = dir_path
             self.output_input.setText(dir_path)
+    
+    def add_resource(self, mode):
+        """选择资源并添加到表格"""
+        if mode == "dir":
+            path = QFileDialog.getExistingDirectory(self, "选择数据目录")
+            type_text = "目录"
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "选择数据文件")
+            type_text = "文件"
+
+        if path:
+            import os
+            row = self.data_table.rowCount()
+            self.data_table.insertRow(row)
+            
+            # 设置类型和路径
+            self.data_table.setItem(row, 0, QTableWidgetItem(type_text))
+            self.data_table.setItem(row, 1, QTableWidgetItem(path))
+            
+            # 设置默认目标路径：如果是目录则用原目录名，如果是文件则用原文件名
+            default_dest = os.path.basename(path)
+            self.data_table.setItem(row, 2, QTableWidgetItem(default_dest))
+
+    def remove_resource(self):
+        """删除选中行"""
+        curr = self.data_table.currentRow()
+        if curr >= 0:
+            self.data_table.removeRow(curr)
 
     def update_command(self):
         """根据用户选择更新打包命令"""
@@ -1485,6 +1508,18 @@ class NuitkaPackager(QMainWindow):
         # 添加输出目录
         if self.output_dir:
             command.append(f"--output-dir={self.output_dir}")
+        
+        # 处理表格中的附加资源
+        for row in range(self.data_table.rowCount()):
+            res_type = self.data_table.item(row, 0).text()
+            src_path = self.data_table.item(row, 1).text()
+            dst_path = self.data_table.item(row, 2).text()
+            
+            # 根据类型选择参数名
+            arg_name = "--include-data-dir" if res_type == "目录" else "--include-data-files"
+            
+            if src_path and dst_path:
+                command.append(f"{arg_name}={src_path}={dst_path}")
 
         # ===== 插件选项 =====
         selected_plugins = [item.text().split('=')[1] for item in self.plugins_list.selectedItems()]
@@ -1502,7 +1537,7 @@ class NuitkaPackager(QMainWindow):
             command.append("--module")
 
         if self.lto_check.isChecked():
-            command.append("--lto")
+            command.append("--lto=yes")
 
         if self.disable_ccache_check.isChecked():
             command.append("--disable-ccache")
@@ -1534,53 +1569,7 @@ class NuitkaPackager(QMainWindow):
             modules = [mod.strip() for mod in self.include_module_input.text().split(',') if mod.strip()]
             for mod in modules:
                 command.append(f"--include-module={mod}")
-
-        # 包含数据目录
-        if self.include_data_dir_input.text():
-            data_dirs = [dd.strip() for dd in self.include_data_dir_input.text().split(',') if dd.strip()]
-
-            # 获取主文件所在目录作为项目基础路径
-            if not self.main_file:
-                QMessageBox.warning(self, "警告", "请先选择主文件")
-                return
-
-            project_base_dir = os.path.dirname(self.main_file)
-
-            for dd in data_dirs:
-                # 分割源路径和目标路径
-                if '=' in dd:
-                    src_path, dest_path = dd.split('=', 1)
-                else:
-                    src_path = dd
-                    # 默认目标路径为源路径的最后一部分
-                    dest_path = os.path.basename(src_path)
-
-                # 确保源路径是绝对路径
-                if not os.path.isabs(src_path):
-                    # 基于主文件所在目录解析相对路径
-                    resolved_path = os.path.join(project_base_dir, src_path)
-
-                    # 验证路径是否存在
-                    if os.path.exists(resolved_path):
-                        src_path = resolved_path
-                    else:
-                        logging.warning(f"资源路径不存在: {resolved_path}")
-                        continue
-
-                # 验证路径是否存在
-                if not os.path.exists(src_path):
-                    logging.warning(f"包含数据目录不存在: {src_path}")
-                    continue
-
-                # 添加到命令
-                command.append(f"--include-data-dir={src_path}={dest_path}")
-                logging.info(f"添加包含目录: {src_path} -> {dest_path}")
-
-                # 详细日志
-                logging.debug(f"原始输入: {dd}")
-                logging.debug(f"解析后源路径: {src_path}")
-                logging.debug(f"解析后目标路径: {dest_path}")
-
+  
         # 排除数据文件
         if self.noinclude_data_input.text():
             exclude_data = [ed.strip() for ed in self.noinclude_data_input.text().split(',') if ed.strip()]
@@ -1602,24 +1591,6 @@ class NuitkaPackager(QMainWindow):
         # ===== Python标志 =====
         for i in range(self.flags_list.count()):
             command.append(self.flags_list.item(i).text())
-
-        # ===== 单文件选项 =====
-        if self.onefile_check.isChecked():
-            if self.onefile_tempdir_input.text():
-                command.append(f"--onefile-tempdir-spec={self.onefile_tempdir_input.text()}")
-
-            if self.onefile_grace_time_spin.value() != 5000:
-                command.append(f"--onefile-child-grace-time={self.onefile_grace_time_spin.value()}")
-
-            if self.onefile_no_compression_check.isChecked():
-                command.append("--onefile-no-compression")
-
-            if self.onefile_as_archive_check.isChecked():
-                command.append("--onefile-as-archive")
-
-        # ===== DLL控制 =====
-        if self.noinclude_dlls_input.text():
-            command.append(f"--noinclude-dlls={self.noinclude_dlls_input.text()}")
 
         # ===== 元数据 =====
         if self.company_input.text():
