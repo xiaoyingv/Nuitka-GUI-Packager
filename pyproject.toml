@@ -2,7 +2,7 @@
 name = "nuitka-gui-packager"
 version = "0.1.0"
 description = "Add your description here"
-requires-python = ">=3.8"
+requires-python = ">=3.9,<3.14"
 dependencies = [
     "nuitka>=2.7.12",
     "pyside6>=6.9.1",
